@@ -27,7 +27,7 @@
 /* Program identification */ 
 #define PROG    "ChristmasDiorama"
 #define VER     "2.0"
-#define BUILD   "07dec2021 @23:43h"
+#define BUILD   "08Dec2021 @14:16h"
 
 /* Necessary includes */
 #include "flashscreen.h"
@@ -117,7 +117,7 @@ void setup() {
   // *** Start up the time client ***
   if(wifi){
     Serial.print("Syncing up time: ");
-    waitForSync(5);
+    waitForSync(7);
     if(timeStatus()==timeSet){
       timer = true;
       Serial.println("time synced");
@@ -132,9 +132,9 @@ void setup() {
   digitalWrite(CHURCH, LOW);
   digitalWrite(TREE, LOW);
   digitalWrite(HOUSES, LOW);
-  digitalWrite(STREET, LOW);
+  digitalWrite(STREET, HIGH);
   // Play the first mp3
-  myDFPlayer.play(random(15));
+  myDFPlayer.playFolder(1, random(8));
 }
 
 void loop() {
@@ -147,32 +147,35 @@ void loop() {
       Serial.print("It's ");
       Serial.print(dateTime("g:ia"));
       Serial.println("! Nighty nighty!\nzzz...");
-      ESP.deepSleep(deepSleepTime);  // Currently set to one hour (3h max I think?)
+      ESP.deepSleep(deepSleepTime);  // Currently set to one hour
     }
 
     // OTHERWISE:
     // [B] IF {"someone comes near"} OR { "it goes completely dark" AND "it's between 4pm and 11pm" }: trigger sequence
     int ldrValue = analogRead(LDR); // Get the current LDR reading
     Serial.printf("Analogue reading is: %d\n", ldrValue);
-    if(((prev_ldrValue-ldrValue)>LDR_STEP) || (ldrValue<LDR_DARK)){
+    if(((prev_ldrValue-ldrValue)>LDR_STEP) || (ldrValue<LDR_DARK) || (minute()==0)){
       // Something's happening - trigger "the sequence"
       digitalWrite(CHURCH, HIGH);  // Lights on in church
       // IF it's Christmas Eve/Day/Boxing Day, play peal of bells
       if((day()>23 && day()<27) && (month()==12)){
-        myDFPlayer.play(3);             // Play peal of bells
+        myDFPlayer.playFolder(2,1);             // Play peal of bells
         while(!myDFPlayer.available()); // Let it finish
       }
       // Play 1 verse of (random) carol
-      myDFPlayer.play(4);// myDFPlayer.playFolder(1,random(5));
+      myDFPlayer.playFolder(1,random(8));// myDFPlayer.playFolder(1,random(5));
       while(!myDFPlayer.available()); // Let it finish      
       // Play walking through snow
-      myDFPlayer.play(4);// myDFPlayer.playFolder(1,random(5));
+      myDFPlayer.playFolder(2,2);// myDFPlayer.playFolder(1,random(5));
       while(!myDFPlayer.available()); // Let it finish      
       digitalWrite(TREE, HIGH);   // Lights on round tree
+      digitalWrite(CHURCH, LOW);  // Lights off in church
       // Play entire christmas carol
-      myDFPlayer.play(4);// myDFPlayer.playFolder(1,random(5));
-      while(!myDFPlayer.available()); // Let it finish      
+      myDFPlayer.play(random(15));// myDFPlayer.playFolder(1,random(5));
+      while(!myDFPlayer.available()); // Let it finish
+      digitalWrite(TREE, LOW);   // Lights off round tree            
     }
+    prev_ldrValue = ldrValue;
   }
 
   // Demo the DFPlayer 
