@@ -49,7 +49,7 @@ const char *password = WIFI_PASSWORD;
 
 /* Global "defines" - may have to look like variables because of type */
 #define BAUDRATE  115200    // Baudrate for serial output
-#define INTERVAL  30        // Time between loops in secs
+#define INTERVAL  1000     // Time between loops in mS
 // The next lines define the connections to the DFPlayer
 #define SOFT_TX   D1
 #define SOFT_RX   D2
@@ -71,10 +71,12 @@ const char *password = WIFI_PASSWORD;
 
 /* Global stuff that must happen outside setup() */
 flashscreen flash;
-bool    sound = false;      // For DFPlayer
-bool    wifi = false;       // For...
-bool    timer = false;      // ...time server
-int     prev_ldrValue = 0; // So we know if it's lighter or darker
+bool      sound = false;          // For DFPlayer
+bool      wifi = false;           // For...
+bool      timer = false;          // ...time server
+int       prev_ldrValue = 0;      // So we know if it's lighter or darker
+uint64_t  deepSleepTime = 3600e6; // Deep sleep delay (millionths of sec)
+
 
 void setup() {
   Serial.begin(BAUDRATE);           // Start up the serial output port
@@ -144,7 +146,8 @@ void loop() {
       // Deep sleep until 6am - or as long as possible (max sleep is about 3 hours I think)
       Serial.print("It's ");
       Serial.print(dateTime("g:ia"));
-      Serial.println("! Nighty nighty!");
+      Serial.println("! Nighty nighty!\nzzz...");
+      ESP.deepSleep(deepSleepTime);  // Currently set to one hour (3h max I think?)
     }
 
     // OTHERWISE:
@@ -163,8 +166,12 @@ void loop() {
       myDFPlayer.play(4);// myDFPlayer.playFolder(1,random(5));
       while(!myDFPlayer.available()); // Let it finish      
       // Play walking through snow
+      myDFPlayer.play(4);// myDFPlayer.playFolder(1,random(5));
+      while(!myDFPlayer.available()); // Let it finish      
       digitalWrite(TREE, HIGH);   // Lights on round tree
       // Play entire christmas carol
+      myDFPlayer.play(4);// myDFPlayer.playFolder(1,random(5));
+      while(!myDFPlayer.available()); // Let it finish      
     }
   }
 
@@ -184,7 +191,7 @@ void loop() {
 
   // Pause a bit. Note, this could be a light sleep to save power
   Serial.print("Now pausing for ");
-  Serial.print(INTERVAL);
+  Serial.print(INTERVAL/1000);
   Serial.println(" seconds");
-  delay(INTERVAL*1000);
+  delay(INTERVAL);
 }
