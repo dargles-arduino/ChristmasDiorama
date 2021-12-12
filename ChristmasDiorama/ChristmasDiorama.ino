@@ -53,7 +53,7 @@ const char *password = WIFI_PASSWORD;
 // The next lines define the connections to the DFPlayer
 #define SOFT_TX   D1
 #define SOFT_RX   D2
-#define DFP_BUSY  D4
+#define DFP_CLEAR D4 // Note: It's the 'busy' line, but high means available
 // These lines define the connections to the LDR and the various LED lighting units
 #define LDR       A0
 #define CHURCH    D5
@@ -87,6 +87,8 @@ void setup() {
   pinMode(TREE, OUTPUT);
   pinMode(HOUSES, OUTPUT);
   pinMode(STREET, OUTPUT);
+  // Set the Player Busy line to input
+  pinMode(DFP_CLEAR, INPUT);
 
   // *** Get the DFPlayer going ***
   mySoftwareSerial.begin(9600); // We need to start up the software serial link to the DFPlayer
@@ -110,12 +112,12 @@ void setup() {
   // Get the initial LDR reading
   
   // Turn all the lights off
-  digitalWrite(CHURCH, LOW);
-  digitalWrite(TREE, LOW);
-  digitalWrite(HOUSES, LOW);
+  digitalWrite(CHURCH, HIGH);
+  digitalWrite(TREE, HIGH);
+  digitalWrite(HOUSES, HIGH);
   digitalWrite(STREET, HIGH);
-  // Play the first mp3
-  myDFPlayer.playFolder(2,1);   // Bells; i.e. 001.mp3
+  // Play the first mp3 - NO don't do this, it will play every hour during the night!
+  // myDFPlayer.playFolder(2,1);   // Bells; i.e. 001.mp3
 }
 
 void connectWifi(){
@@ -143,6 +145,14 @@ void connectTime(){
     if(timeStatus()==timeSet){
       timer = true;
       Serial.println("time synced");
+      // IF it's after 11pm or before 6am: deep sleep until 6am
+      if((hour()>SLEEPTIME-1) || (hour()<WAKETIME)){
+        // Deep sleep until 6am - or as long as possible (max sleep is about 3 hours I think)
+        Serial.print("It's ");
+        Serial.print(dateTime("g:ia"));
+        Serial.println("! Nighty nighty! zzz...");
+        ESP.deepSleep(deepSleepTime);  // Currently set to one hour
+      }
     }
     else Serial.println("failed to sync time");
   }  
@@ -155,40 +165,29 @@ void loop() {
   if(!timer) connectTime();
   
   // IF mp3 is still playing, let it finish. Otherwise...
-  if(myDFPlayer.available()){
-
-    // [A] IF it's after 11pm or before 6am: deep sleep until 6am
-    if(timer && ((hour()>SLEEPTIME-1) || (hour()<WAKETIME))){
-      // Deep sleep until 6am - or as long as possible (max sleep is about 3 hours I think)
-      Serial.print("It's ");
-      Serial.print(dateTime("g:ia"));
-      Serial.println("! Nighty nighty! zzz...");
-      ESP.deepSleep(deepSleepTime);  // Currently set to one hour
-    }
-
-    // OTHERWISE:
-    // [B] IF {"someone comes near"} OR { "it goes completely dark" AND "it's between 4pm and 11pm" }: trigger sequence
+  if(digitalRead(DFP_CLEAR)){
+    // IF {"someone comes near"} OR { "it goes completely dark" AND "it's between 4pm and 11pm" }: trigger sequence
     int ldrValue = analogRead(LDR); // Get the current LDR reading
-    Serial.printf("Analogue reading is: %d\n", ldrValue);
+    //Serial.printf("Analogue reading is: %d\n", ldrValue);
     if(((prev_ldrValue-ldrValue)>LDR_STEP) || (ldrValue<LDR_DARK) || (minute()==0)){
       // Something's happening - trigger "the sequence"
       digitalWrite(CHURCH, HIGH);  // Lights on in church
       // IF it's Christmas Eve/Day/Boxing Day, play peal of bells
       if((day()>23 && day()<27) && (month()==12)){
         myDFPlayer.playFolder(2,1);     // Play peal of bells
-        while(!myDFPlayer.available()); // Let it finish
+        while(!digitalRead(DFP_CLEAR)); // Let it finish
       }
       // Play 1 verse of (random) carol
       myDFPlayer.playFolder(1,random(8));
       Serial.print("\nPlaying verse of carol");
-      while(!myDFPlayer.available()){
+      while(!digitalRead(DFP_CLEAR)){
         Serial.print(".");
         delay(1000); // Let it finish      
       }
       // Play walking through snow
       myDFPlayer.playFolder(2,2);// Walking through snow, i.e. 002.mp3
       Serial.print("\nPlaying snow walking");
-      while(!myDFPlayer.available()){
+      while(!digitalRead(DFP_CLEAR)){
         Serial.print(".");
         delay(1000); // Let it finish
       }      
@@ -197,7 +196,7 @@ void loop() {
       // Play entire christmas carol
       myDFPlayer.play(random(15));// myDFPlayer.playFolder(1,random(5));
       Serial.print("\nPlaying entire carol");
-      while(!myDFPlayer.available()){
+      while(!digitalRead(DFP_CLEAR)){
         Serial.print(".");
         delay(1000); // Let it finish
       }
@@ -212,7 +211,7 @@ void loop() {
   //if(sound) myDFPlayer.loopFolder(5); //loop all mp3 files in folder SD:/05.
 
   // Report the current time
-  if(1==1){
+  if(second()==0){
     Serial.print("Time is now ");
     Serial.print(dateTime("g:ia"));
     Serial.print(" on ");
@@ -220,10 +219,11 @@ void loop() {
     //Serial.print("Hour is: ");
     //Serial.println(hour());
   }
+  else Serial.print(".");
 
   // Pause a bit. Note, this could be a light sleep to save power
-  Serial.print("Now pausing for ");
+  /*Serial.print("Now pausing for ");
   Serial.print(INTERVAL/1000);
-  Serial.println(" seconds");
+  Serial.println(" seconds");*/
   delay(INTERVAL);
 }
