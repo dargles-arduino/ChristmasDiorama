@@ -27,7 +27,7 @@
 /* Program identification */ 
 #define PROG    "ChristmasDiorama"
 #define VER     "2.0"
-#define BUILD   "08Dec2021 @22:13h"
+#define BUILD   "14Dec2021 @23:17h"
 
 /* Necessary includes */
 #include "flashscreen.h"
@@ -62,7 +62,7 @@ const char *password = WIFI_PASSWORD;
 #define STREET    D8
 // These lines define how the program responds to the LDR
 #define LDR_DARK  10        // Reading from the LDR when it's considered "dark"
-#define LDR_STEP  50        // How much the LDR must change by before it's considered a "change"
+#define LDR_STEP  40        // How much the LDR must change by before it's considered a "change"
 // These lines define when the unit sleeps
 #define SLEEPTIME 23        // 24h clock - goes to sleep after 11pm
 #define WAKETIME  6         // ditto - but defines wake time as 6am
@@ -91,17 +91,8 @@ void setup() {
   pinMode(DFP_CLEAR, INPUT);
 
   // *** Get the DFPlayer going ***
-  mySoftwareSerial.begin(9600); // We need to start up the software serial link to the DFPlayer
-  Serial.println(F("Initializing DFPlayer ... (May take 3~5 seconds)"));
-  if (!myDFPlayer.begin(mySoftwareSerial)) {  //Use softwareSerial to communicate with mp3.
-    Serial.println(F("Unable to start DFPlayer"));
-  }
-  else {
-    Serial.println(F("DFPlayer Mini online."));
-    sound = true;  
-    myDFPlayer.volume(20);  //Set volume value. From 0 to 30
-  }
-
+  connectDFPlayer();
+  
   // Get the WiFi going
   connectWifi();
 
@@ -111,13 +102,28 @@ void setup() {
   // *** Set up the lights & sound as we wish to begin ***
   // Get the initial LDR reading
   
-  // Turn all the lights off
+  // Set the lights for start up
   digitalWrite(CHURCH, HIGH);
   digitalWrite(TREE, HIGH);
   digitalWrite(HOUSES, HIGH);
   digitalWrite(STREET, HIGH);
   // Play the first mp3 - NO don't do this, it will play every hour during the night!
   // myDFPlayer.playFolder(2,1);   // Bells; i.e. 001.mp3
+}
+
+void connectDFPlayer(){
+  // *** Start up the DFPlayer ***
+  mySoftwareSerial.begin(9600); // We need to start up the software serial link to the DFPlayer
+  Serial.println(F("Initializing DFPlayer ... (May take 3~5 seconds)"));
+  if (!myDFPlayer.begin(mySoftwareSerial,true,false)) {  //Use softwareSerial to communicate with mp3.
+    Serial.println(F("Unable to start DFPlayer"));
+  }
+  else {
+    Serial.println(F("DFPlayer Mini online."));
+    sound = true;  
+    myDFPlayer.volume(20);  //Set volume value. From 0 to 30
+  }
+  return;
 }
 
 void connectWifi(){
@@ -145,72 +151,88 @@ void connectTime(){
     if(timeStatus()==timeSet){
       timer = true;
       Serial.println("time synced");
-      // IF it's after 11pm or before 6am: deep sleep until 6am
-      if((hour()>SLEEPTIME-1) || (hour()<WAKETIME)){
-        // Deep sleep until 6am - or as long as possible (max sleep is about 3 hours I think)
-        Serial.print("It's ");
-        Serial.print(dateTime("g:ia"));
-        Serial.println("! Nighty nighty! zzz...");
-        ESP.deepSleep(deepSleepTime);  // Currently set to one hour
-      }
     }
     else Serial.println("failed to sync time");
   }  
   return;
 }
 
+void waitforSoundEnd(){
+  // Wait for sound to get playing
+  delay(1000);
+  // Now keep waiting until the DFPlayer indicates it's done
+  while(!digitalRead(DFP_CLEAR)){
+    Serial.print(".");
+    delay(1000); // Let it finish      
+  }
+  Serial.println("");
+  return;
+}
+
+void runSequence(){
+  // *** Run the lights and sounds sequence ***
+  Serial.println("Entering Sequence");
+  digitalWrite(CHURCH, HIGH);  // Lights on in church
+  
+  // IF it's Christmas Eve/Day/Boxing Day, play peal of bells
+  if((day()>23 && day()<27) && (month()==12)){
+    myDFPlayer.playFolder(2,1);     // Play peal of bells
+    Serial.print("Merry Christmas!");
+    waitforSoundEnd();
+  }
+
+  // Play 1 verse of (random) carol
+  myDFPlayer.playFolder(1,random(8));
+  Serial.print("Playing verse of carol");
+  waitforSoundEnd();
+  
+  // Play walking through snow
+  myDFPlayer.playFolder(2,2);// Walking through snow, i.e. 002.mp3
+  Serial.print("Playing snow walking");
+  waitforSoundEnd();      
+  
+  // Lights on tree and play a whole carol
+  digitalWrite(TREE, HIGH);   // Lights on round tree
+  digitalWrite(CHURCH, LOW);  // Lights off in church
+  // Play entire christmas carol
+  myDFPlayer.play(random(15));// myDFPlayer.playFolder(1,random(5));
+  Serial.print("Playing entire carol");
+  waitforSoundEnd();
+
+  // Finished, back to defaults
+  digitalWrite(TREE, LOW);   // Lights off round tree
+  Serial.println("Turning lights off round tree");
+  digitalWrite(CHURCH, HIGH);
+  return;
+}
+
 void loop() {
-  // Check we've got WiFi and time
+  // Try again if we've not got WiFi or time
   if(!wifi) connectWifi();
   if(!timer) connectTime();
   
+  // IF it's after 11pm or before 6am: deep sleep until 6am
+  if(timer && (hour()>SLEEPTIME-1) || (hour()<WAKETIME)){
+    // Deep sleep until 6am - or as long as possible (max sleep is about 3 hours I think)
+    Serial.print("It's ");
+    Serial.print(dateTime("g:ia"));
+    Serial.println("! Nighty nighty! zzz...");
+    ESP.deepSleep(deepSleepTime);  // Currently set to one hour
+  }
+
   // IF mp3 is still playing, let it finish. Otherwise...
-  if(digitalRead(DFP_CLEAR)){
-    // IF {"someone comes near"} OR { "it goes completely dark" AND "it's between 4pm and 11pm" }: trigger sequence
+  if(sound && digitalRead(DFP_CLEAR)){
     int ldrValue = analogRead(LDR); // Get the current LDR reading
-    //Serial.printf("Analogue reading is: %d\n", ldrValue);
+    Serial.printf("%d", ldrValue);
+    // IF {"someone comes near"} OR { "it goes completely dark" OR "it's on the hour" }: trigger sequence
     if(((prev_ldrValue-ldrValue)>LDR_STEP) || (ldrValue<LDR_DARK) || (minute()==0)){
       // Something's happening - trigger "the sequence"
-      digitalWrite(CHURCH, HIGH);  // Lights on in church
-      // IF it's Christmas Eve/Day/Boxing Day, play peal of bells
-      if((day()>23 && day()<27) && (month()==12)){
-        myDFPlayer.playFolder(2,1);     // Play peal of bells
-        while(!digitalRead(DFP_CLEAR)); // Let it finish
-      }
-      // Play 1 verse of (random) carol
-      myDFPlayer.playFolder(1,random(8));
-      Serial.print("\nPlaying verse of carol");
-      while(!digitalRead(DFP_CLEAR)){
-        Serial.print(".");
-        delay(1000); // Let it finish      
-      }
-      // Play walking through snow
-      myDFPlayer.playFolder(2,2);// Walking through snow, i.e. 002.mp3
-      Serial.print("\nPlaying snow walking");
-      while(!digitalRead(DFP_CLEAR)){
-        Serial.print(".");
-        delay(1000); // Let it finish
-      }      
-      digitalWrite(TREE, HIGH);   // Lights on round tree
-      digitalWrite(CHURCH, LOW);  // Lights off in church
-      // Play entire christmas carol
-      myDFPlayer.play(random(15));// myDFPlayer.playFolder(1,random(5));
-      Serial.print("\nPlaying entire carol");
-      while(!digitalRead(DFP_CLEAR)){
-        Serial.print(".");
-        delay(1000); // Let it finish
-      }
-      Serial.println("");
-      digitalWrite(TREE, LOW);   // Lights off round tree            
-    }
+      runSequence();
+    }  
     prev_ldrValue = ldrValue;
   }
 
-  // Demo the DFPlayer 
-  //if (myDFPlayer.available()) myDFPlayer.next(); 
-  //if(sound) myDFPlayer.loopFolder(5); //loop all mp3 files in folder SD:/05.
-
-  // Report the current time
+  // Report the current time once a minute
   if(second()==0){
     Serial.print("Time is now ");
     Serial.print(dateTime("g:ia"));
